@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drift — a continuous generative broadcast</title>
+<style>
+  :root {
+    --paper: #f3eee3;
+    --ink: #3a352c;
+    --faded: #8d8474;
+    --clay: #a87e5f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Times New Roman", Times, Georgia, serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #scene {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+  .frame { position: fixed; z-index: 2; pointer-events: none; }
+  .frame > * { pointer-events: auto; }
+
+  #masthead {
+    top: 2.2rem; left: 2.4rem; right: 2.4rem;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  #masthead h1 {
+    font-size: 1.28rem; font-weight: normal;
+    letter-spacing: 0.06em;
+  }
+  #masthead h1 em { font-style: italic; letter-spacing: 0.02em; }
+  #utc {
+    font-size: 0.82rem; color: var(--faded);
+    font-variant-numeric: tabular-nums; letter-spacing: 0.08em;
+  }
+
+  #colophon {
+    bottom: 2.2rem; left: 2.4rem; right: 2.4rem;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 2rem;
+  }
+  #nowplaying {
+    font-size: 0.9rem; font-style: italic; color: var(--faded);
+    letter-spacing: 0.04em; line-height: 1.6;
+  }
+  #nowplaying b { font-style: normal; font-weight: normal; color: var(--ink); }
+
+  #controls { display: flex; align-items: center; gap: 1rem; }
+  #vol {
+    -webkit-appearance: none; appearance: none;
+    width: 110px; height: 1px; background: var(--faded);
+    outline: none; cursor: pointer;
+  }
+  #vol::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink); border: none;
+  }
+  #vol::-moz-range-thumb {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink); border: none;
+  }
+  #vollabel { font-size: 0.78rem; color: var(--faded); letter-spacing: 0.1em; }
+
+  #veil {
+    position: fixed; inset: 0; z-index: 5;
+    background: var(--paper);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; gap: 1.6rem;
+    transition: opacity 2.4s ease;
+  }
+  #veil.lifted { opacity: 0; pointer-events: none; }
+  #veil h2 {
+    font-size: 2rem; font-weight: normal; letter-spacing: 0.08em;
+  }
+  #veil p {
+    max-width: 34em; font-size: 0.95rem; line-height: 1.75;
+    color: var(--faded); font-style: italic; padding: 0 2rem;
+  }
+  #tunein {
+    font-family: inherit; font-size: 0.9rem;
+    letter-spacing: 0.22em; text-transform: lowercase;
+    color: var(--ink); background: none;
+    border: 1px solid var(--ink);
+    padding: 0.75rem 2.6rem; cursor: pointer;
+    transition: background 0.5s, color 0.5s;
+  }
+  #tunein:hover { background: var(--ink); color: var(--paper); }
+  #hint { font-size: 0.75rem; color: var(--faded); letter-spacing: 0.12em; }
+
+  #dbgtoggle {
+    font-family: inherit; font-size: 0.78rem; letter-spacing: 0.1em;
+    color: var(--faded); background: none; border: none;
+    cursor: pointer; padding: 0;
+  }
+  #dbgtoggle:hover { color: var(--ink); }
+
+  #debug {
+    top: 4.6rem; right: 2.4rem; z-index: 6;
+    width: min(27rem, calc(100vw - 2.4rem));
+    max-height: calc(100vh - 9rem);
+    overflow-y: auto;
+    background: var(--paper);
+    border: 1px solid var(--ink);
+    padding: 1rem 1.1rem 1.2rem;
+    font-size: 0.78rem; letter-spacing: 0.04em; line-height: 1.5;
+  }
+  #debug[hidden] { display: none; }
+  #dbghead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    letter-spacing: 0.18em; margin-bottom: 0.6rem;
+  }
+  #dbgclose {
+    font-family: inherit; font-size: 1rem; line-height: 1;
+    background: none; border: none; cursor: pointer; color: var(--faded);
+  }
+  #dbgclose:hover { color: var(--ink); }
+  #dbgclock { color: var(--faded); margin-bottom: 0.8rem; }
+  #dbgclock b { color: var(--ink); font-weight: normal; }
+  #dbgclock .sim { color: var(--clay); }
+  .dbgrow { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.55rem; }
+  #debug .dbgrow button {
+    font-family: inherit; font-size: 0.74rem; letter-spacing: 0.08em;
+    color: var(--ink); background: none; border: 1px solid var(--faded);
+    padding: 0.28rem 0.6rem; cursor: pointer;
+  }
+  #debug .dbgrow button:hover {
+    border-color: var(--ink); background: var(--ink); color: var(--paper);
+  }
+  #dbgwhen {
+    font-family: inherit; font-size: 0.74rem; color: var(--ink);
+    background: none; border: 1px solid var(--faded);
+    padding: 0.24rem 0.4rem; flex: 1; min-width: 0;
+  }
+  #dbglabel { color: var(--faded); margin: 0.9rem 0 0.35rem; font-style: italic; }
+  #dbghours { width: 100%; border-collapse: collapse; }
+  #dbghours td {
+    padding: 0.3rem 0.5rem 0.3rem 0;
+    border-top: 1px solid rgba(58,53,44,0.15);
+    vertical-align: top;
+  }
+  #dbghours td:last-child { padding-right: 0; }
+  #dbghours tr { cursor: pointer; }
+  #dbghours tr:hover td { color: var(--clay); }
+  #dbghours tr.now td { color: var(--clay); font-style: italic; }
+  #dbghours .dim { color: var(--faded); }
+  #dbghours tr:hover .dim { color: var(--clay); }
+
+  #roll {
+    left: 0; right: 0; bottom: 0; z-index: 6;
+    background: var(--paper);
+    border-top: 1px solid var(--ink);
+    padding: 0.55rem 1.1rem 0.5rem;
+    font-size: 0.78rem; letter-spacing: 0.04em;
+  }
+  #roll[hidden] { display: none; }
+  #rollhead {
+    display: flex; align-items: baseline; gap: 1rem;
+    margin-bottom: 0.35rem;
+  }
+  #rolltitle { letter-spacing: 0.18em; }
+  #rollinfo {
+    color: var(--faded); flex: 1; font-style: italic;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #rollzoom { display: flex; gap: 0.35rem; }
+  #rollzoom button {
+    font-family: inherit; font-size: 0.72rem; letter-spacing: 0.08em;
+    color: var(--faded); background: none; border: 1px solid transparent;
+    padding: 0.1rem 0.4rem; cursor: pointer;
+  }
+  #rollzoom button:hover { color: var(--ink); }
+  #rollzoom button.on { color: var(--ink); border-color: var(--faded); }
+  #rollclose {
+    font-family: inherit; font-size: 1rem; line-height: 1;
+    background: none; border: none; cursor: pointer; color: var(--faded);
+  }
+  #rollclose:hover { color: var(--ink); }
+  #rollcanvas { display: block; width: 100%; height: 264px; }
+  #rollhint {
+    color: var(--faded); font-style: italic;
+    font-size: 0.7rem; margin-top: 0.25rem;
+  }
+
+  @media (max-width: 640px) {
+    #masthead, #colophon { left: 1.2rem; right: 1.2rem; }
+    #colophon { flex-direction: column; align-items: flex-start; gap: 0.8rem; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <header class="frame" id="masthead">
+    <h1><em>drift</em> &nbsp;·&nbsp; a continuous generative broadcast</h1>
+    <span id="utc">—</span>
+  </header>
+
+  <footer class="frame" id="colophon">
+    <div id="nowplaying">signal quiet</div>
+    <div id="controls">
+      <button id="dbgtoggle" title="toggle debug panel (`)">debug</button>
+      <span id="vollabel">volume</span>
+      <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8">
+    </div>
+  </footer>
+
+  <aside class="frame" id="debug" hidden>
+    <div id="dbghead">
+      <span>debug · time travel</span>
+      <button id="dbgclose" title="close">×</button>
+    </div>
+    <div id="dbgclock">—</div>
+    <div class="dbgrow">
+      <button data-ff="60">+1m</button>
+      <button data-ff="600">+10m</button>
+      <button data-ff="3600">+1h</button>
+      <button data-ff="21600">+6h</button>
+      <button data-ff="86400">+1d</button>
+      <button data-ff="604800">+7d</button>
+    </div>
+    <div class="dbgrow">
+      <button id="dbggen">new generation ↦</button>
+      <button id="dbglive">back to live</button>
+      <button id="dbgroll" title="daw-style lane view of every layer (m)">midi roll</button>
+    </div>
+    <div class="dbgrow">
+      <input id="dbgwhen" type="datetime-local" step="1" title="local time">
+      <button id="dbggo">go</button>
+    </div>
+    <div id="dbglabel">upcoming generations — click one to audition it</div>
+    <table id="dbghours"><tbody></tbody></table>
+  </aside>
+
+  <aside class="frame" id="roll" hidden>
+    <div id="rollhead">
+      <span id="rolltitle">midi roll</span>
+      <span id="rollinfo">—</span>
+      <span id="rollzoom">
+        <button data-win="30">30s</button>
+        <button data-win="90" class="on">90s</button>
+        <button data-win="300">5m</button>
+        <button data-win="3600">1h</button>
+      </span>
+      <button id="rollclose" title="close (m)">×</button>
+    </div>
+    <canvas id="rollcanvas"></canvas>
+    <div id="rollhint">deterministic audit — notes right of the playhead
+      haven’t sounded yet · click a track name to mute it locally</div>
+  </aside>
+
+  <div id="veil">
+    <h2><em>drift</em></h2>
+    <p>An endless piece of music, composed by the clock itself. Everyone who
+       tunes in hears the same moment of the same broadcast — it drifts through
+       modes, odd meters and weather, and it never plays the same movement twice.</p>
+    <button id="tunein">tune in</button>
+    <span id="hint">synchronized worldwide · utc</span>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
