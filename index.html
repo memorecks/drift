@@ -140,7 +140,37 @@
     background: none; border: 1px solid var(--faded);
     padding: 0.24rem 0.4rem; flex: 1; min-width: 0;
   }
-  #dbglabel { color: var(--faded); margin: 0.9rem 0 0.35rem; font-style: italic; }
+  #dbglabel, #dbgmixlabel {
+    color: var(--faded); margin: 0.9rem 0 0.35rem; font-style: italic;
+  }
+  #dbgmix {
+    display: flex; justify-content: space-between;
+    gap: 0.3rem; padding: 0.2rem 0.2rem 0;
+  }
+  .mixstrip {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 0.45rem; min-width: 0;
+  }
+  .mixstrip input {
+    -webkit-appearance: none; appearance: none;
+    writing-mode: vertical-lr; direction: rtl;
+    width: 1px; height: 84px; background: var(--faded);
+    outline: none; cursor: pointer;
+  }
+  .mixstrip input::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 13px; height: 5px; border-radius: 1px;
+    background: var(--ink); border: none;
+  }
+  .mixstrip input::-moz-range-thumb {
+    width: 13px; height: 5px; border-radius: 1px;
+    background: var(--ink); border: none;
+  }
+  .mixstrip span {
+    writing-mode: vertical-rl;
+    font-size: 0.66rem; letter-spacing: 0.08em; color: var(--faded);
+  }
+  .mixstrip:hover span { color: var(--ink); }
   #dbghours { width: 100%; border-collapse: collapse; }
   #dbghours td {
     padding: 0.3rem 0.5rem 0.3rem 0;
@@ -236,6 +266,8 @@
       <input id="dbgwhen" type="datetime-local" step="1" title="local time">
       <button id="dbggo">go</button>
     </div>
+    <div id="dbgmixlabel">mixer — local ears only · double-click a fader to reset</div>
+    <div id="dbgmix"></div>
     <div id="dbglabel">upcoming generations — click one to audition it</div>
     <table id="dbghours"><tbody></tbody></table>
   </aside>
@@ -266,6 +298,16 @@
     <span id="hint">synchronized worldwide · utc</span>
   </div>
 
-  <script src="app.js"></script>
+  <!-- loaded in dependency order; classic scripts share one global scope -->
+  <script src="js/core.js"></script>
+  <script src="js/theory.js"></script>
+  <script src="js/structure.js"></script>
+  <script src="js/voices.js"></script>
+  <script src="js/melody.js"></script>
+  <script src="js/scheduler.js"></script>
+  <script src="js/visual.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/roll.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>
