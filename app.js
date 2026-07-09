@@ -89,13 +89,12 @@ const MODES = {
   'aeolian':         [0, 2, 3, 5, 7, 8, 10],
   'ionian':          [0, 2, 4, 5, 7, 9, 11],
   'phrygian':        [0, 1, 3, 5, 7, 8, 10],
-  'melodic minor':   [0, 2, 3, 5, 7, 9, 11],
   'lydian dominant': [0, 2, 4, 6, 7, 9, 10],
   'major pentatonic':[0, 2, 4, 7, 9],
   'minor pentatonic':[0, 3, 5, 7, 10],
 };
 const MODE_NAMES = Object.keys(MODES);
-const MODE_WEIGHTS = [3, 2.2, 2.2, 2, 1.2, 1, 1.6, 1.6, 0.8, 0.8];
+const MODE_WEIGHTS = [3, 2.2, 2.2, 2, 1.2, 1, 1.6, 0.8, 0.8];
 
 const METERS = [
   { name: '5/4',  beats: 5 },
@@ -216,6 +215,9 @@ function genParams(g) {
   });
   const ostStep = r() < 0.6 ? 1 : 2;                        // pulses per step
   const ostLevel = 0.45 + r() * 0.3;
+  /* the figure's instrument: the pluck kit's other half, or a bare sine or
+     triangle sung with long decay and a breath of vibrato into the reverb */
+  const ostVoice = wpick(r, ['pluck', 'sine', 'triangle'], [1.2, 1, 1]);
 
   /* per-generation tone: pre-reverb lowpass cutoff — some movements are open,
      others muffled like a worn tape (weighted toward warm, capped low so
@@ -262,6 +264,9 @@ function genParams(g) {
     pluck: { damp: pick(rt, [0.9955, 0.9965, 0.9975, 0.9983]),
              lp: 850 + rt() * 900 },
     kal:   { dec: 0.75 + rt() * 0.6 },
+    ostT:  { atk: 0.02 + rt() * 0.04, dec: 3 + rt() * 2.5,
+             lp: 900 + rt() * 700,
+             lfoHz: 2.5 + rt() * 2.5, lfoCents: 3 + rt() * 4 },
     verb:  0.75 + rt() * 0.5,        // reverb-send multiplier
     delay: { time: Math.min(0.92, pulse * pick(rt, [1, 1.5, 2])),
              fb: 0.22 + rt() * 0.2,
@@ -272,7 +277,7 @@ function genParams(g) {
               chordSpan, melK, bassK, bassRot, melBase, bright, loops,
               wind, water, birds, crickets,
               pluckVoice, melPluck, arpAmt, arpK, arpRot, toneHz,
-              ostLen, ostPat, ostStep, ostLevel,
+              ostLen, ostPat, ostStep, ostLevel, ostVoice,
               melShift, enters, outroDur, timbre,
               barDur: meter.beats * pulse };
   genCache.set(g, P);
@@ -582,6 +587,41 @@ function playPluckVoice(tc, P, midi, level = 1) {
   (P.pluckVoice === 'kalimba' ? playKalimba : playPluck)(tc, P, midi, level);
 }
 
+/* sung ostinato tone: one bare oscillator (sine or triangle) with a soft
+   attack, a long dying tail, and a whisper of vibrato, leaning hard on the
+   reverb so the figure hangs in the air instead of ticking */
+function playOstTone(tc, P, midi, level = 1) {
+  const T = P.timbre.ostT;
+  const f = mtof(midi);
+  const o = actx.createOscillator();
+  o.type = P.ostVoice; o.frequency.value = f;
+  const lfo = actx.createOscillator();
+  lfo.frequency.value = T.lfoHz;
+  const lfoG = actx.createGain(); lfoG.gain.value = T.lfoCents;
+  lfo.connect(lfoG); lfoG.connect(o.detune);
+  const lp = actx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = T.lp;
+  const g = actx.createGain();
+  g.gain.setValueAtTime(0.0001, tc);
+  g.gain.linearRampToValueAtTime(0.06 * level, tc + T.atk);
+  g.gain.exponentialRampToValueAtTime(0.0001, tc + T.atk + T.dec);
+  const pan = panner(midi);
+  o.connect(lp); lp.connect(g); g.connect(pan);
+  out(pan, 0.35, 1.15 * P.timbre.verb);
+  sendDelay(pan, P.timbre.delay.amt * 0.5);
+  const end = tc + T.atk + T.dec + 0.3;
+  startNode(o, tc, end);
+  startNode(lfo, tc, end);
+}
+
+function playOst(tc, P, midi, level = 1) {
+  if (P.ostVoice === 'pluck')
+    /* the opposite pluck voice from the generation's melody/arp kit, so the
+       figure reads as its own instrument */
+    (P.pluckVoice === 'kalimba' ? playPluck : playKalimba)(tc, P, midi, level);
+  else playOstTone(tc, P, midi, level);
+}
+
 function playChirp(tc, r) {
   const syllables = 1 + Math.floor(r() * 3);
   for (let s = 0; s < syllables; s++) {
@@ -867,9 +907,7 @@ function schedulePulse(P, p, tw) {
         vis(tw, 'pluck', e.midi, e.dur);
         break;
       case 'ost':
-        /* the opposite pluck voice from the generation's melody/arp kit, so the
-           figure reads as its own instrument */
-        if (!muted) (P.pluckVoice === 'kalimba' ? playPluck : playKalimba)(tc, P, e.midi, e.level);
+        if (!muted) playOst(tc, P, e.midi, e.level);
         vis(tw, 'pluck', e.midi, e.dur);
         break;
       case 'bell':
@@ -1490,7 +1528,9 @@ function trackSub(key, P) {
     case 'bells': return `3 loops · ${P.loops.map(L => L.len).join('·')} pulses`;
     case 'mel':   return `euclid ${P.melK}/${b} · pluck ${Math.round(P.melPluck * 100)}%`;
     case 'arp':   return P.arpAmt > 0 ? `euclid ${P.arpK}/${b} · ${P.pluckVoice}` : 'tacet this gen';
-    case 'ost':   return `${P.ostLen}-step figure · ${P.ostStep === 1 ? 'every pulse' : 'every 2nd pulse'}`;
+    case 'ost':   return `${P.ostLen}-step figure · ${P.ostVoice === 'pluck'
+                    ? (P.pluckVoice === 'kalimba' ? 'string' : 'kalimba')
+                    : P.ostVoice}`;
     case 'pad':   return `${P.chordSpan}-bar chords`;
     case 'bass':  return `euclid ${P.bassK}/${b}`;
     case 'drone': return `${NOTE_NAMES[P.rootPc]} root + fifth`;
