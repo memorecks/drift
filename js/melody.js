@@ -78,13 +78,15 @@ function pulseEvents(P, p, tw) {
   if (euclidHit(P.melK, beats, rot, step) && rand('ml', g, p) < density) {
     let deg = Math.round(vnoise('mc' + g, p * 0.09) * (P.mode.length * 2) - 2);
     if (rand('snap', g, p) < 0.55) deg = snapToChord(P, deg, chord);
-    /* shift into this generation's register (some bars step an octave up or
-       down), then fold back inside absolute bounds — shift-then-fold moves
-       the whole line, where a shifted fold window would only nudge the
-       outliers */
+    /* shift into this generation's register (melShift is in scale degrees —
+       a diatonic move, so the line stays in the mode; some bars step an
+       octave up or down), then fold back inside absolute bounds —
+       shift-then-fold moves the whole line, where a shifted fold window
+       would only nudge the outliers */
     const lr = rand('moct', g, bar);
     const lift = lr < 0.12 ? 12 : lr < 0.22 ? -12 : 0;
-    const midi = fold(fold(degreeToMidi(P, deg, 5), 55, 81) + P.melShift + lift, 46, 93);
+    const midi = fold(fold(degreeToMidi(P, deg, 5), 55, 81)
+                      + degShiftSemis(P, deg, P.melShift) + lift, 46, 93);
     if (rand('plv', g, p) < P.melPluck) evs.push({ kind: 'mpluck', tw, midi, dur: 1.4 });
     else evs.push({ kind: 'mel', tw, midi, dur: 2.6 });
   }
@@ -96,8 +98,9 @@ function pulseEvents(P, p, tw) {
   if (P.arpAmt > 0 && euclidHit(P.arpK, beats, P.arpRot, step)
       && rand('ar', g, p) < P.arpAmt * layerLevel(P, 'arp', tw) * arpGate * outro) {
     const ci = Math.floor(rand('arn', g, p) * chord.degrees.length);
-    const midi = fold(fold(degreeToMidi(P, chord.degrees[ci], 5), 60, 81)
-                      + P.melShift, 48, 93);
+    const ad = chord.degrees[ci];
+    const midi = fold(fold(degreeToMidi(P, ad, 5), 60, 81)
+                      + degShiftSemis(P, ad, P.melShift), 48, 93);
     evs.push({ kind: 'arp', tw, midi, dur: 1.2,
                level: 0.55 + rand('arv', g, p) * 0.45 });
   }

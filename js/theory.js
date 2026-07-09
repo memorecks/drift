@@ -83,6 +83,12 @@ function padVoicing(P, chord) {
   return midis;
 }
 
+/* semitone delta of moving a degree by `shift` scale steps — diatonic
+   transposition, so register shifts keep every note inside the mode */
+function degShiftSemis(P, deg, shift) {
+  return degreeToMidi(P, deg + shift, 0) - degreeToMidi(P, deg, 0);
+}
+
 /* pull a melody degree toward the sounding chord */
 function snapToChord(P, deg, chord) {
   const L = P.mode.length;

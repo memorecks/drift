@@ -129,25 +129,67 @@ function playPad(tc, dur, P, chord, elapsed = 0) {
   const T = P.timbre.pad;
   const A = (elapsed > 0 ? 2.5 : Math.min(7, dur * 0.3)) * T.atk;
   const R_ = T.rel;
-  padVoicing(P, chord).forEach(midi => {
+  /* per-archetype level: the waves carry different energy through the lowpass */
+  const lvl = { duo: 0.042, saw: 0.027, wobble: 0.042,
+                breathe: 0.042, organ: 0.036 }[T.voice];
+  padVoicing(P, chord).forEach((midi, ni) => {
     const f = mtof(midi);
+    const cut = (T.lp + P.bright * 950) * (T.voice === 'organ' ? 1.8 : 1);
     const lp = actx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = T.lp + P.bright * 950;
+    lp.frequency.value = cut;
     const g = actx.createGain();
     g.gain.setValueAtTime(0.0001, tc);
-    g.gain.linearRampToValueAtTime(0.042, tc + A);
-    g.gain.setValueAtTime(0.042, tc + Math.max(A, dur));
+    g.gain.linearRampToValueAtTime(lvl, tc + A);
+    g.gain.setValueAtTime(lvl, tc + Math.max(A, dur));
     g.gain.linearRampToValueAtTime(0.0001, tc + dur + R_);
     const pan = panner(midi);
     lp.connect(g); g.connect(pan);
     out(pan, 0.7, 0.55 * P.timbre.verb, 'pad');
-    [[T.wave, 0], ['sine', T.det]].forEach(([type, cents]) => {
+    const stop = tc + dur + R_ + 0.5;
+    const osc = (type, cents, dest = lp) => {
       const o = actx.createOscillator();
       o.type = type; o.frequency.value = f; o.detune.value = cents;
-      o.connect(lp);
-      startNode(o, tc, tc + dur + R_ + 0.5);
-    });
+      o.connect(dest);
+      startNode(o, tc, stop);
+      return o;
+    };
+    if (T.voice === 'saw') {
+      /* detuned ensemble; the cutoff blooms open through the attack and settles */
+      [-T.spread, 0, T.spread].forEach(c => osc('sawtooth', c));
+      lp.frequency.setValueAtTime(cut * 0.7, tc);
+      lp.frequency.linearRampToValueAtTime(cut * 1.4, tc + A + 1);
+      lp.frequency.setTargetAtTime(cut, tc + A + 1, dur * 0.25);
+    } else if (T.voice === 'organ') {
+      /* drawbar stack: fundamental + octave + twelfth per chord tone */
+      T.draw.forEach((amt, i) => {
+        const og = actx.createGain(); og.gain.value = amt;
+        og.connect(lp);
+        const o = actx.createOscillator();
+        o.frequency.value = f * (i + 1); o.detune.value = i * 2;
+        o.connect(og);
+        startNode(o, tc, stop);
+      });
+    } else {
+      const oscs = [osc(T.wave, 0), osc('sine', T.det)];
+      if (T.voice === 'wobble') {
+        /* slow pitch drift, rate offset per chord tone so the voices shimmer
+           against each other instead of wowing in unison */
+        const lfo = actx.createOscillator();
+        lfo.frequency.value = T.lfoHz * (1 + ni * 0.17);
+        const lg = actx.createGain(); lg.gain.value = T.lfoAmt;
+        lfo.connect(lg);
+        oscs.forEach(o => lg.connect(o.detune));
+        startNode(lfo, tc, stop);
+      } else if (T.voice === 'breathe') {
+        /* the lowpass slowly opens and closes over the chord */
+        const lfo = actx.createOscillator();
+        lfo.frequency.value = T.lfoHz * (1 + ni * 0.1);
+        const lg = actx.createGain(); lg.gain.value = cut * T.sweep;
+        lfo.connect(lg); lg.connect(lp.frequency);
+        startNode(lfo, tc, stop);
+      }
+    }
   });
 }
 

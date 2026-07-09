@@ -118,9 +118,12 @@ function genParams(g) {
      nothing turns glassy) */
   const toneHz = 1200 + Math.pow(r(), 1.5) * 3300;
 
-  /* register: each movement folds its melody into its own octave window,
-     so successive generations don't all sit in the same range */
-  const melShift = wpick(r, [-12, -7, 0, 5, 12], [1.2, 1.6, 1.6, 1.5, 1.1]);
+  /* register: each movement shifts its melody into its own window — measured
+     in scale degrees (an octave, or roughly a fifth down / fourth up) so the
+     moved line stays inside the mode */
+  const melShift = wpick(r, [-mode.length, -Math.round(mode.length * 7 / 12), 0,
+                             Math.round(mode.length * 5 / 12), mode.length],
+                         [1.2, 1.6, 1.6, 1.5, 1.1]);
 
   /* arrangement: pad + drone open every generation; the other layers enter
      in a shuffled order, staggered across the first half, each with its own
@@ -166,6 +169,17 @@ function genParams(g) {
              fb: 0.22 + rt() * 0.2,
              amt: rt() < 0.7 ? 0.1 + rt() * 0.22 : 0 },
   };
+
+  /* pad voice archetype — which instrument carries the harmony this
+     movement. Own seed stream so the rt() draws above keep their order. */
+  const rp = R('padv', g);
+  timbre.pad.voice  = wpick(rp, ['duo', 'saw', 'wobble', 'breathe', 'organ'],
+                            [30, 20, 18, 17, 15]);
+  timbre.pad.spread = 6 + rp() * 8;               // saw ensemble detune, cents
+  timbre.pad.lfoHz  = 0.06 + rp() * 0.2;          // wobble / breathe rate
+  timbre.pad.lfoAmt = 3 + rp() * 5;               // wobble depth, cents
+  timbre.pad.sweep  = 0.3 + rp() * 0.25;          // breathe cutoff swing
+  timbre.pad.draw   = [1, 0.3 + rp() * 0.2, 0.1 + rp() * 0.12]; // organ bars
 
   const P = { g, start, len, day, hod, rootPc, modeName, mode, meter, pulse,
               droneFifth: rand('dr5', g) < 0.5,
