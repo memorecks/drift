@@ -107,7 +107,7 @@ function pulseEvents(P, p, tw) {
 
   /* ostinato: the generation's clockwork figure, re-pitched to the sounding
      chord, drifting in and out on a five-minute tide */
-  const ostGate = phraseGate(P, 'ost', tw, 300, 0.5)
+  const ostGate = phraseGate(P, 'ost', tw, 300, 0.65)
                 * layerLevel(P, 'ost', tw) * outro;
   if (ostGate > 0.03 && p % P.ostStep === 0) {
     const st = P.ostPat[(p / P.ostStep) % P.ostLen];

@@ -316,31 +316,82 @@ function playPluckVoice(tc, P, midi, level = 1, track = 'arp') {
   (P.pluckVoice === 'kalimba' ? playKalimba : playPluck)(tc, P, midi, level, track);
 }
 
-/* sung ostinato tone: one bare oscillator (sine or triangle) with a soft
-   attack, a long dying tail, and a whisper of vibrato, leaning hard on the
-   reverb so the figure hangs in the air instead of ticking */
+/* sung/struck ostinato tone: a family of soft archetypes — bare sine or
+   triangle with a whisper of vibrato, a hollow lowpassed square, a two-op
+   FM voice that settles like an electric piano, a woody marimba strike, or
+   a blown breath tone — all leaning on the reverb so the figure hangs in
+   the air instead of ticking */
 function playOstTone(tc, P, midi, level = 1) {
   const T = P.timbre.ostT;
+  const v = P.ostVoice;
   const f = mtof(midi);
-  const o = actx.createOscillator();
-  o.type = P.ostVoice; o.frequency.value = f;
-  const lfo = actx.createOscillator();
-  lfo.frequency.value = T.lfoHz;
-  const lfoG = actx.createGain(); lfoG.gain.value = T.lfoCents;
-  lfo.connect(lfoG); lfoG.connect(o.detune);
+  /* per-archetype peak: the waves carry different energy through the lowpass */
+  const peak = ({ sine: 0.11, triangle: 0.1, square: 0.06,
+                  fm: 0.1, marimba: 0.12, breath: 0.1 }[v] || 0.1) * level;
+  const atk = v === 'marimba' ? 0.008 : v === 'breath' ? T.atk * 4 + 0.05 : T.atk;
+  const dec = v === 'marimba' ? T.dec * 0.55 : T.dec;
   const lp = actx.createBiquadFilter();
   lp.type = 'lowpass'; lp.frequency.value = T.lp;
   const g = actx.createGain();
   g.gain.setValueAtTime(0.0001, tc);
-  g.gain.linearRampToValueAtTime(0.06 * level, tc + T.atk);
-  g.gain.exponentialRampToValueAtTime(0.0001, tc + T.atk + T.dec);
+  g.gain.linearRampToValueAtTime(peak, tc + atk);
+  g.gain.exponentialRampToValueAtTime(0.0001, tc + atk + dec);
   const pan = panner(midi);
-  o.connect(lp); lp.connect(g); g.connect(pan);
-  out(pan, 0.35, 1.15 * P.timbre.verb, 'ost');
+  lp.connect(g); g.connect(pan);
+  out(pan, 0.55, 1.05 * P.timbre.verb, 'ost');
   sendDelay(pan, P.timbre.delay.amt * 0.5, 'ost');
-  const end = tc + T.atk + T.dec + 0.3;
+  const end = tc + atk + dec + 0.3;
+
+  if (v === 'fm') {
+    /* two-op FM: the index dies over the note, so it speaks with a soft
+       metallic edge and settles to a sine */
+    const car = actx.createOscillator(); car.frequency.value = f;
+    const mod = actx.createOscillator(); mod.frequency.value = f * T.fmRatio;
+    const mg = actx.createGain();
+    mg.gain.setValueAtTime(f * T.fmIdx, tc);
+    mg.gain.exponentialRampToValueAtTime(f * 0.05, tc + dec * 0.6);
+    mod.connect(mg); mg.connect(car.frequency);
+    car.connect(lp);
+    startNode(car, tc, end);
+    startNode(mod, tc, end);
+    return;
+  }
+  if (v === 'marimba') {
+    /* woody strike: fundamental plus a fast-dying fourth partial */
+    const o = actx.createOscillator(); o.frequency.value = f;
+    o.connect(lp);
+    startNode(o, tc, end);
+    if (f * 4 < 3000) {
+      const p4 = actx.createOscillator(); p4.frequency.value = f * 4;
+      const pg = actx.createGain();
+      pg.gain.setValueAtTime(0.3, tc);
+      pg.gain.exponentialRampToValueAtTime(0.001, tc + 0.35);
+      p4.connect(pg); pg.connect(lp);
+      startNode(p4, tc, tc + 0.5);
+    }
+    return;
+  }
+  /* sung voices: one bare oscillator with a whisper of vibrato */
+  const o = actx.createOscillator();
+  o.type = v === 'breath' ? 'sine' : v;
+  o.frequency.value = f;
+  const lfo = actx.createOscillator();
+  lfo.frequency.value = T.lfoHz;
+  const lfoG = actx.createGain(); lfoG.gain.value = T.lfoCents;
+  lfo.connect(lfoG); lfoG.connect(o.detune);
+  o.connect(lp);
   startNode(o, tc, end);
   startNode(lfo, tc, end);
+  if (v === 'breath') {
+    /* blown: band-filtered noise breathing around the second partial */
+    const n = actx.createBufferSource();
+    n.buffer = noiseBuf; n.loop = true;
+    const bp = actx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = f * 2; bp.Q.value = 1.4;
+    const ng = actx.createGain(); ng.gain.value = T.breath;
+    n.connect(bp); bp.connect(ng); ng.connect(lp);
+    startNode(n, tc, end);
+  }
 }
 
 function playOst(tc, P, midi, level = 1) {

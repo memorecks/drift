@@ -108,10 +108,13 @@ function genParams(g) {
     rest: r() < 0.18,
   });
   const ostStep = r() < 0.6 ? 1 : 2;                        // pulses per step
-  const ostLevel = 0.45 + r() * 0.3;
-  /* the figure's instrument: the pluck kit's other half, or a bare sine or
-     triangle sung with long decay and a breath of vibrato into the reverb */
-  const ostVoice = wpick(r, ['pluck', 'sine', 'triangle'], [1.2, 1, 1]);
+  const ostLevel = 0.7 + r() * 0.3;
+  /* the figure's instrument: the pluck kit's other half, or one of the sung/
+     struck archetypes branched in playOstTone — bare sine/triangle, hollow
+     square, soft FM e-piano, woody marimba, or a blown breath tone */
+  const ostVoice = wpick(r, ['pluck', 'sine', 'triangle', 'square',
+                             'fm', 'marimba', 'breath'],
+                         [1.2, 0.7, 0.7, 0.8, 1, 1, 0.9]);
 
   /* per-generation tone: pre-reverb lowpass cutoff — some movements are open,
      others muffled like a worn tape (weighted toward warm, capped low so
@@ -162,7 +165,7 @@ function genParams(g) {
              lp: 850 + rt() * 900 },
     kal:   { dec: 0.75 + rt() * 0.6 },
     ostT:  { atk: 0.02 + rt() * 0.04, dec: 3 + rt() * 2.5,
-             lp: 900 + rt() * 700,
+             lp: 1200 + rt() * 900,
              lfoHz: 2.5 + rt() * 2.5, lfoCents: 3 + rt() * 4 },
     verb:  0.75 + rt() * 0.5,        // reverb-send multiplier
     delay: { time: Math.min(0.92, pulse * pick(rt, [1, 1.5, 2])),
@@ -180,6 +183,12 @@ function genParams(g) {
   timbre.pad.lfoAmt = 3 + rp() * 5;               // wobble depth, cents
   timbre.pad.sweep  = 0.3 + rp() * 0.25;          // breathe cutoff swing
   timbre.pad.draw   = [1, 0.3 + rp() * 0.2, 0.1 + rp() * 0.12]; // organ bars
+
+  /* ostinato voice extras — own stream so the rt() draws keep their order */
+  const ro = R('ostv', g);
+  timbre.ostT.fmRatio = pick(ro, [2, 3, 3.01, 4]);
+  timbre.ostT.fmIdx   = 1.2 + ro() * 2;      // FM index at the strike
+  timbre.ostT.breath  = 0.25 + ro() * 0.3;   // noise mix for the blown voice
 
   const P = { g, start, len, day, hod, rootPc, modeName, mode, meter, pulse,
               droneFifth: rand('dr5', g) < 0.5,
