@@ -148,6 +148,19 @@ const dbgMix = document.getElementById('dbgmix');
   dbgMix.appendChild(strip);
 });
 
+/* visual reactivity — how hard the sound drives the sun, ridgelines, and
+   note field (visual.js's visIntensity). Local-only, like the mixer. */
+const dbgReact = document.getElementById('dbgreact');
+const dbgReactVal = document.getElementById('dbgreactval');
+dbgReact.addEventListener('input', () => {
+  visIntensity = parseFloat(dbgReact.value);
+  dbgReactVal.textContent = visIntensity.toFixed(2).replace(/0$/, '') + '×';
+});
+dbgReact.addEventListener('dblclick', () => {
+  dbgReact.value = 1.6;
+  dbgReact.dispatchEvent(new Event('input'));
+});
+
 function toggleDebug(show = debugEl.hidden) {
   debugEl.hidden = !show;
   if (show) {

@@ -171,6 +171,28 @@
     font-size: 0.66rem; letter-spacing: 0.08em; color: var(--faded);
   }
   .mixstrip:hover span { color: var(--ink); }
+  #dbgreactrow {
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-top: 0.9rem; color: var(--faded);
+    font-size: 0.72rem; letter-spacing: 0.06em;
+  }
+  #dbgreactrow label { flex: none; }
+  #dbgreactrow input {
+    -webkit-appearance: none; appearance: none; flex: 1; min-width: 0;
+    height: 1px; background: var(--faded); outline: none; cursor: pointer;
+  }
+  #dbgreactrow input::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 5px; height: 13px; border-radius: 1px; background: var(--ink);
+  }
+  #dbgreactrow input::-moz-range-thumb {
+    width: 5px; height: 13px; border-radius: 1px;
+    background: var(--ink); border: none;
+  }
+  #dbgreactval {
+    flex: none; width: 2.6rem; text-align: right;
+    font-variant-numeric: tabular-nums; color: var(--ink);
+  }
   #dbghours { width: 100%; border-collapse: collapse; }
   #dbghours td {
     padding: 0.3rem 0.5rem 0.3rem 0;
@@ -268,6 +290,11 @@
     </div>
     <div id="dbgmixlabel">mixer — local ears only · double-click a fader to reset</div>
     <div id="dbgmix"></div>
+    <div id="dbgreactrow">
+      <label for="dbgreact">visual reactivity</label>
+      <input id="dbgreact" type="range" min="0" max="3" step="0.05" value="1.6">
+      <span id="dbgreactval">1.6×</span>
+    </div>
     <div id="dbglabel">upcoming generations — click one to audition it</div>
     <table id="dbghours"><tbody></tbody></table>
   </aside>
