@@ -23,6 +23,9 @@ resize();
 const pulses = [];       // live visual note-shapes
 let lastUiSec = -1;      // throttle for syncing CSS vars to the sky palette
 let bandLow = 0, bandMid = 0, bandHigh = 0;
+/* how hard the sound drives the visuals — user-set via the debug panel's
+   "reactivity" fader; 1 is the reference tuning, 0 freezes the motion */
+let visIntensity = 1.6;
 const freqData = new Uint8Array(256);
 
 function readBands() {
@@ -33,8 +36,8 @@ function readBands() {
     for (let i = a; i < b; i++) s += freqData[i];
     return s / ((b - a) * 255);
   };
-  bandLow  += (avg(1, 9)   - bandLow)  * 0.08;
-  bandMid  += (avg(9, 40)  - bandMid)  * 0.08;
+  bandLow  += (avg(1, 9)    - bandLow)  * 0.08;
+  bandMid  += (avg(9, 40)   - bandMid)  * 0.08;
   bandHigh += (avg(40, 140) - bandHigh) * 0.08;
 }
 
@@ -226,7 +229,7 @@ function frame() {
   /* sun — a breathing disc with a fractal-noise rim */
   const scx = W * 0.7;
   const scy = H * (0.18 + 0.13 * (1 - dayness));
-  const r0 = Math.min(W, H) * 0.085 * (1 + bandLow * 0.25);
+  const r0 = Math.min(W, H) * 0.085 * (1 + bandLow * 0.25 * visIntensity);
   ctx2d.fillStyle = css(mix(sun, sky, 0.4), 0.35);
   ctx2d.beginPath();
   ctx2d.arc(scx, scy, r0 * 1.9, 0, Math.PI * 2);
@@ -261,10 +264,12 @@ function frame() {
   for (let i = 0; i < 5; i++) {
     const baseY = H * (0.5 + i * 0.108);
     const react = i >= 3 ? bandLow : bandMid;
-    const amp = H * (0.05 + i * 0.014) * (1 + react * 0.9);
+    const amp = H * (0.05 + i * 0.014) * (1 + react * 0.9 * visIntensity);
     const col = mix(RIDGE_FAR, RIDGE_NEAR, i / 4);
     const tinted = mix(col, sky, night * (0.55 - i * 0.06));
-    ctx2d.fillStyle = css(tinted, 0.92);
+    /* opaque so the sun's glow is fully occluded rather than bleeding
+       through the ridge; layers still read via their differing tint */
+    ctx2d.fillStyle = css(tinted);
     ctx2d.beginPath();
     ctx2d.moveTo(-4, H + 4);
     for (let x = -4; x <= W + 6; x += 6) {
