@@ -28,11 +28,6 @@ let bandLow = 0, bandMid = 0, bandHigh = 0;
 let visIntensity = 1.6;
 const freqData = new Uint8Array(256);
 
-/* asymmetric smoothing: fast attack so note onsets snap into the picture,
-   slow release so they bloom and settle rather than flicker */
-function band(cur, target) {
-  return cur + (target - cur) * (target > cur ? 0.4 : 0.06);
-}
 function readBands() {
   if (!analyser) return;
   analyser.getByteFrequencyData(freqData);
@@ -41,9 +36,9 @@ function readBands() {
     for (let i = a; i < b; i++) s += freqData[i];
     return s / ((b - a) * 255);
   };
-  bandLow  = band(bandLow,  avg(1, 9));
-  bandMid  = band(bandMid,  avg(9, 40));
-  bandHigh = band(bandHigh, avg(40, 140));
+  bandLow  += (avg(1, 9)    - bandLow)  * 0.08;
+  bandMid  += (avg(9, 40)   - bandMid)  * 0.08;
+  bandHigh += (avg(40, 140) - bandHigh) * 0.08;
 }
 
 function mix(c1, c2, t) {
@@ -234,21 +229,16 @@ function frame() {
   /* sun — a breathing disc with a fractal-noise rim */
   const scx = W * 0.7;
   const scy = H * (0.18 + 0.13 * (1 - dayness));
-  const r0 = Math.min(W, H) * 0.085 * (1 + bandLow * 0.55 * visIntensity);
-  /* halo swells and brightens on bass energy */
-  const haloR = r0 * (1.9 + bandLow * 0.9 * visIntensity);
-  ctx2d.fillStyle = css(mix(sun, sky, 0.4),
-    0.35 + Math.min(0.4, bandMid * 0.7 * visIntensity));
+  const r0 = Math.min(W, H) * 0.085 * (1 + bandLow * 0.25 * visIntensity);
+  ctx2d.fillStyle = css(mix(sun, sky, 0.4), 0.35);
   ctx2d.beginPath();
-  ctx2d.arc(scx, scy, haloR, 0, Math.PI * 2);
+  ctx2d.arc(scx, scy, r0 * 1.9, 0, Math.PI * 2);
   ctx2d.fill();
   ctx2d.fillStyle = css(sun, 0.85 * (1 - 0.45 * rainVis));
   ctx2d.beginPath();
-  /* rim roughness picks up with treble — the sun bristles on bright hits */
-  const rim = 0.09 + bandHigh * 0.28 * visIntensity;
   for (let i = 0; i <= 72; i++) {
     const a = (i / 72) * Math.PI * 2;
-    const rr = r0 * (1 + rim * (fbm(999, a * 2.2 + t * 0.05, 3) - 0.5) * 2);
+    const rr = r0 * (1 + 0.09 * (fbm(999, a * 2.2 + t * 0.05, 3) - 0.5) * 2);
     const px = scx + Math.cos(a) * rr, py = scy + Math.sin(a) * rr;
     if (i === 0) ctx2d.moveTo(px, py); else ctx2d.lineTo(px, py);
   }
@@ -274,7 +264,7 @@ function frame() {
   for (let i = 0; i < 5; i++) {
     const baseY = H * (0.5 + i * 0.108);
     const react = i >= 3 ? bandLow : bandMid;
-    const amp = H * (0.05 + i * 0.014) * (1 + react * 1.3 * visIntensity);
+    const amp = H * (0.05 + i * 0.014) * (1 + react * 0.9 * visIntensity);
     const col = mix(RIDGE_FAR, RIDGE_NEAR, i / 4);
     const tinted = mix(col, sky, night * (0.55 - i * 0.06));
     /* opaque so the sun's glow is fully occluded rather than bleeding
@@ -294,15 +284,14 @@ function frame() {
 
   if (rainVis > 0.01) drawRain(t);
 
-  /* note shapes — the whole field bristles a little with mid-band energy */
-  const energy = 1 + bandMid * 0.45 * visIntensity;
+  /* note shapes */
   for (let i = pulses.length - 1; i >= 0; i--) {
     const p = pulses[i];
     const u = (now - p.start) / p.dur;
     if (u > 1) { pulses.splice(i, 1); continue; }
     if (p.kind === 'pad') continue;
     const alpha = u < 0.12 ? u / 0.12 : 1 - (u - 0.12) / 0.88;
-    const grow = energy * (1 + 0.35 * (1 - Math.pow(1 - Math.min(u * 2, 1), 3)));
+    const grow = 1 + 0.35 * (1 - Math.pow(1 - Math.min(u * 2, 1), 3));
     const x = pitchX(p.midi);
     let y, s;
     if (p.kind === 'mel') {
