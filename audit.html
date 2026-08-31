@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drift · voice audit</title>
+<style>
+  :root {
+    --bg: #17181c; --panel: #1f2026; --row: #24252c;
+    --line: #2e3038; --ink: #c9ccd4; --dim: #8a8f9c; --faint: #5c6170;
+    --arm: #e5484d; --led: #ffd75e; --pick: #6fcf8f;
+    --pad: #7f9cf5; --melc: #f0b26b; --ost: #7fd0a0; --nat: #cf8fd0; --lay: #8d93a3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--bg); color: var(--ink);
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+
+  /* -- toolbar -- */
+  #bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #logo { color: var(--dim); letter-spacing: .04em; }
+  #logo b { color: var(--ink); font-weight: 600; margin-left: 4px; }
+  .grp { display: flex; align-items: center; gap: 6px; }
+  .grp label { color: var(--faint); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .08em; }
+  .tbtn { background: #2a2b32; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 4px; padding: 3px 9px; font: inherit; cursor: pointer; }
+  .tbtn:hover { background: #33343c; }
+  #gen { width: 92px; background: #141519; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; font-size: 12px; }
+  select { background: #2a2b32; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 4px; padding: 3px 4px; font: inherit; }
+  #mvol { width: 90px; accent-color: #9aa2b5; }
+  #meter { border-radius: 2px; }
+  #midistat { color: var(--faint); font-size: 11px; margin-left: auto; }
+  #gensum { padding: 5px 12px; font-size: 11.5px; color: var(--dim);
+    background: #1b1c21; border-bottom: 1px solid var(--line);
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    white-space: nowrap; overflow-x: auto; }
+
+  /* -- track console -- */
+  #console { flex: 1; overflow-y: auto; padding-bottom: 12px; }
+  #console h3 { margin: 14px 12px 4px; font-size: 11px; font-weight: 600;
+    color: var(--faint); text-transform: uppercase; letter-spacing: .12em; }
+  .track { display: grid;
+    grid-template-columns: 4px 26px 12px 205px 150px 40px 150px 1fr;
+    align-items: center; gap: 8px; padding: 5px 12px 5px 8px;
+    background: var(--row); border-bottom: 1px solid #1c1d22; }
+  .swatch { width: 4px; height: 26px; border-radius: 2px; }
+  .arm { width: 20px; height: 20px; border-radius: 50%; border: 1px solid #565863;
+    background: #26272e; cursor: pointer; padding: 0; justify-self: center; }
+  .arm:hover { border-color: var(--arm); }
+  .arm.on { background: var(--arm); border-color: var(--arm);
+    box-shadow: 0 0 10px #e5484d66; }
+  .noarm { width: 20px; }
+  .led { width: 8px; height: 8px; border-radius: 50%; background: #33343b;
+    justify-self: center; }
+  .led.on { background: var(--led); box-shadow: 0 0 8px #ffd75ecc; }
+  .name { font-size: 12.5px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .pick { font-size: 9px; color: var(--pick); border: 1px solid #2f5c40;
+    border-radius: 3px; padding: 0 4px; margin-left: 6px; letter-spacing: .06em;
+    text-transform: uppercase; vertical-align: 1px; }
+  input[type=range].fader { width: 150px; accent-color: #9aa2b5; height: 18px; }
+  .val { font-size: 11px; color: var(--dim); text-align: right;
+    font-family: ui-monospace, Menlo, monospace; }
+  .extra { display: flex; align-items: center; gap: 5px; font-size: 10px;
+    color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
+  .extra input[type=range] { width: 86px; accent-color: #7aa0c9; }
+  .extra input[type=checkbox] { accent-color: #7aa0c9; }
+  .info { font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; font-family: ui-monospace, Menlo, monospace; }
+
+  /* -- keyboard deck -- */
+  #deck { background: var(--panel); border-top: 1px solid var(--line); }
+  #deckbar { display: flex; align-items: center; gap: 10px; padding: 6px 12px; }
+  #octlab { color: var(--dim); font-size: 11px; min-width: 70px; text-align: center; }
+  #hint { color: var(--faint); font-size: 11px; margin-left: auto; }
+  #keys { overflow-x: auto; overflow-y: hidden; margin: 0 12px 10px; }
+  #keybed { position: relative; height: 78px; }
+  .wkey { position: absolute; top: 0; width: 18px; height: 78px; background: #e8e6df;
+    border: 1px solid #b9b7ae; border-radius: 0 0 3px 3px; cursor: pointer; }
+  .wkey.lit { background: #ffd75e; }
+  .bkey { position: absolute; top: 0; width: 11px; height: 48px; background: #22232a;
+    border: 1px solid #000; border-radius: 0 0 2px 2px; z-index: 2; cursor: pointer; }
+  .bkey.lit { background: #e5a13d; }
+  .wkey span { position: absolute; bottom: 2px; left: 0; right: 0; text-align: center;
+    font-size: 9px; color: #77746a; pointer-events: none; }
+  .bkey span { position: absolute; bottom: 2px; left: 0; right: 0; text-align: center;
+    font-size: 8px; color: #8a8f9c; pointer-events: none; }
+
+  /* -- power veil -- */
+  #veil { position: fixed; inset: 0; background: #101115ee; display: flex;
+    flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    z-index: 10; }
+  #veil.off { display: none; }
+  #tunein { font-size: 16px; padding: 12px 26px; border-radius: 6px;
+    background: #2a2b32; color: var(--ink); border: 1px solid #565863; cursor: pointer; }
+  #tunein:hover { border-color: #9aa2b5; }
+  #veil p { color: var(--faint); font-size: 12px; max-width: 420px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header id="bar">
+  <span id="logo">drift <b>voice audit</b></span>
+  <button id="panic" class="tbtn" title="cut every sounding note">⏹ panic</button>
+  <span class="grp">
+    <label>gen</label>
+    <input id="gen" class="mono" type="number" min="0" step="1">
+    <button id="gprev" class="tbtn" title="previous generation">‹</button>
+    <button id="gnext" class="tbtn" title="next generation">›</button>
+    <button id="gnow" class="tbtn" title="the generation sounding right now">now</button>
+    <button id="grand" class="tbtn" title="random generation">rand</button>
+  </span>
+  <span class="grp">
+    <label>pad hold</label>
+    <select id="hold">
+      <option value="3">3 s</option>
+      <option value="6" selected>6 s</option>
+      <option value="12">12 s</option>
+    </select>
+  </span>
+  <span class="grp">
+    <label>master</label>
+    <input id="mvol" type="range" min="0" max="1" step="0.01" value="0.8">
+    <canvas id="meter" width="72" height="10"></canvas>
+  </span>
+  <span id="midistat" class="mono">midi: —</span>
+</header>
+
+<div id="gensum"></div>
+<main id="console"></main>
+
+<footer id="deck">
+  <div id="deckbar">
+    <button id="octdn" class="tbtn" title="octave down (z)">z ◀</button>
+    <span id="octlab" class="mono"></span>
+    <button id="octup" class="tbtn" title="octave up (x)">▶ x</button>
+    <span id="hint">a w s e d f t g y h u j k o l p ; play · z / x octave ·
+      note-offs ignored (every voice is a fixed envelope) ·
+      velocity shapes bell / pluck / kalimba / ostinato</span>
+  </div>
+  <div id="keys"><div id="keybed"></div></div>
+</footer>
+
+<div id="veil">
+  <button id="tunein">⏻ power on the console</button>
+  <p>audio needs a gesture. this page is a local audit bench — it loads the
+     broadcast's voice code unchanged but never touches the broadcast itself.</p>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/theory.js"></script>
+<script src="js/structure.js"></script>
+<script src="js/voices.js"></script>
+<script src="js/audit.js"></script>
+</body>
+</html>
