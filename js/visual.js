@@ -277,7 +277,9 @@ function frame() {
     const amp = H * (0.05 + i * 0.014) * (1 + react * 1.3 * visIntensity);
     const col = mix(RIDGE_FAR, RIDGE_NEAR, i / 4);
     const tinted = mix(col, sky, night * (0.55 - i * 0.06));
-    ctx2d.fillStyle = css(tinted, 0.92);
+    /* opaque so the sun's glow is fully occluded rather than bleeding
+       through the ridge; layers still read via their differing tint */
+    ctx2d.fillStyle = css(tinted);
     ctx2d.beginPath();
     ctx2d.moveTo(-4, H + 4);
     for (let x = -4; x <= W + 6; x += 6) {
