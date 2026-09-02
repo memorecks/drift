@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drift — biomes (prototype)</title>
+<style>
+  :root { --paper:#f3eee3; --ink:#3a352c; --faded:#8d8474; --clay:#a87e5f; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; }
+  body {
+    background:var(--paper); color:var(--ink);
+    font-family:"Times New Roman", Times, Georgia, serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  #scene { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .frame { position:fixed; z-index:2; }
+
+  #masthead {
+    top:2.2rem; left:2.4rem; right:2.4rem; pointer-events:none;
+    display:flex; justify-content:space-between; align-items:baseline;
+  }
+  #masthead h1 { font-size:1.28rem; font-weight:normal; letter-spacing:0.06em; }
+  #masthead h1 em { font-style:italic; letter-spacing:0.02em; }
+  #tag { font-size:0.82rem; color:var(--faded); letter-spacing:0.08em; }
+
+  /* control bar — prototype only, not part of the broadcast chrome */
+  #panel {
+    bottom:2.2rem; left:2.4rem; right:2.4rem;
+    display:flex; align-items:center; gap:1.6rem; flex-wrap:wrap;
+  }
+  #envs { display:flex; gap:0.4rem; }
+  #envs button {
+    font-family:inherit; font-size:0.74rem; letter-spacing:0.1em;
+    text-transform:lowercase; color:var(--ink); background:none;
+    border:1px solid var(--faded); padding:0.34rem 0.9rem; cursor:pointer;
+  }
+  #envs button:hover { border-color:var(--ink); }
+  #envs button.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+
+  .field { display:flex; align-items:center; gap:0.6rem; color:var(--faded);
+           font-size:0.74rem; letter-spacing:0.06em; }
+  .field input[type=range] {
+    -webkit-appearance:none; appearance:none; width:180px; height:1px;
+    background:var(--faded); outline:none; cursor:pointer;
+  }
+  .field input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none; width:9px; height:9px;
+    border-radius:50%; background:var(--ink); border:none;
+  }
+  .field input[type=range]::-moz-range-thumb {
+    width:9px; height:9px; border-radius:50%; background:var(--ink); border:none;
+  }
+  .field b { color:var(--ink); font-weight:normal; font-variant-numeric:tabular-nums;
+             min-width:3.2em; }
+  label { cursor:pointer; }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <header class="frame" id="masthead">
+    <h1><em>drift</em> &nbsp;·&nbsp; biomes</h1>
+    <span id="tag">visual prototype</span>
+  </header>
+
+  <div class="frame" id="panel">
+    <div id="envs"></div>
+    <label class="field">
+      time <input id="hour" type="range" min="0" max="24" step="0.1" value="9">
+      <b id="hourval">09:00</b>
+    </label>
+    <label class="field">
+      <input id="live" type="checkbox"> live utc
+    </label>
+    <label class="field">
+      motion <input id="react" type="range" min="0" max="2" step="0.05" value="1">
+    </label>
+  </div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   shared engine — copied from drift so the prototype reads on the same
+   surface as the broadcast (js/core.js noise, js/visual.js palette + sky).
+   ========================================================================= */
+
+const canvas = document.getElementById('scene');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', resize); resize();
+
+/* fast integer-hash noise (drift core.js) — no per-frame string hashing */
+function ih(i, seed) {
+  let n = (i * 374761393 + seed * 668265263) | 0;
+  n = (n ^ (n >>> 13)) | 0;
+  n = Math.imul(n, 1274126177);
+  n ^= n >>> 16;
+  return (n >>> 0) / 4294967296;
+}
+function vn(seed, x) {
+  const x0 = Math.floor(x), f = x - x0;
+  const u = f * f * (3 - 2 * f);
+  return ih(x0, seed) + (ih(x0 + 1, seed) - ih(x0, seed)) * u;
+}
+function fbm(seed, x, oct = 3) {
+  let s = 0, amp = 0.5, fr = 1, norm = 0;
+  for (let i = 0; i < oct; i++) {
+    s += vn(seed + i * 131, x * fr) * amp;
+    norm += amp; amp *= 0.5; fr *= 2.03;
+  }
+  return s / norm;
+}
+
+/* palette helpers (drift visual.js) */
+function mix(a, b, t) {
+  return [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t, a[2] + (b[2]-a[2])*t];
+}
+const css = (c, a = 1) => `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
+const lum = c => c[0]*0.299 + c[1]*0.587 + c[2]*0.114;
+
+const PAPER_DAY = [243, 238, 227];
+
+/* time-of-day keyframes: [utcHour, sky, sun], smoothly wrapped (drift) */
+const SKY_STOPS = [
+  [ 0.0, [ 62,  70,  92], [214, 216, 222]],  // deep night
+  [ 4.5, [ 62,  70,  92], [214, 216, 222]],
+  [ 6.0, [132, 128, 148], [228, 178, 150]],  // pre-dawn
+  [ 7.5, [235, 208, 180], [236, 186, 130]],  // dawn
+  [ 9.5, [243, 238, 227], [222, 199, 158]],  // day paper
+  [16.0, [243, 238, 227], [222, 199, 158]],
+  [18.0, [240, 216, 172], [232, 168, 108]],  // golden hour
+  [19.5, [226, 170, 128], [226, 132,  84]],  // sunset
+  [21.0, [118, 112, 134], [216, 196, 180]],  // dusk
+  [22.5, [ 62,  70,  92], [214, 216, 222]],
+];
+function skyAt(hod) {
+  const n = SKY_STOPS.length;
+  for (let i = 0; i < n; i++) {
+    const a = SKY_STOPS[i], b = SKY_STOPS[(i + 1) % n];
+    const h2 = i + 1 < n ? b[0] : b[0] + 24;
+    if (hod >= a[0] && hod < h2) {
+      let u = (hod - a[0]) / (h2 - a[0]);
+      u = u * u * (3 - 2 * u);
+      return { sky: mix(a[1], b[1], u), sun: mix(a[2], b[2], u) };
+    }
+  }
+  return { sky: SKY_STOPS[0][1], sun: SKY_STOPS[0][2] };
+}
+const DAY_L = lum(PAPER_DAY), NIGHT_L = lum(SKY_STOPS[0][1]);
+const nightAmt = sky => Math.min(1, Math.max(0, (DAY_L - lum(sky)) / (DAY_L - NIGHT_L)));
+
+/* the broadcast drives motion from an analyser; standalone we stand in a
+   slow, seeded "breath" so the scene stays alive without audio */
+function breath(t, seed) { return 0.5 * fbm(seed, t * 0.35, 3) + 0.15; }
+
+/* =========================================================================
+   environments — each is { name, draw(env) }, given a shared frame context:
+     { t, hod, sky, sun, night, low, mid, react }
+   Add a biome by pushing another entry; the switcher wires up automatically.
+   ========================================================================= */
+const ENVIRONMENTS = [];
+
+/* a breathing fractal-rim sun, shared by biomes (drift's sun, parameterised) */
+function drawSun(cx, cy, r0, sun, sky, rainless = 1) {
+  ctx.fillStyle = css(mix(sun, sky, 0.4), 0.35);          // soft halo
+  ctx.beginPath(); ctx.arc(cx, cy, r0 * 1.9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = css(sun, 0.85 * rainless);
+  ctx.beginPath();
+  for (let i = 0; i <= 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    const rr = r0 * (1 + 0.09 * (fbm(999, a * 2.2, 3) - 0.5) * 2);
+    const px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
+    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+  }
+  ctx.closePath(); ctx.fill();
+}
+
+/* ---------------------------------------------------------- sun + ocean -- */
+const WATER_FAR  = [178, 186, 188];   // near the horizon, borrows the sky
+const WATER_NEAR = [104, 122, 128];   // close water, deeper and cooler
+ENVIRONMENTS.push({
+  name: 'ocean',
+  draw({ t, sun, sky, night, low, react }) {
+    /* flat sky wash, matching drift (no gradient) */
+    ctx.fillStyle = css(sky);
+    ctx.fillRect(0, 0, W, H);
+
+    const horizon = H * 0.46;
+
+    /* sun sits low, near the water; breathing radius from the stand-in band */
+    const scx = W * 0.68;
+    const scy = horizon - Math.min(W, H) * 0.14;
+    const r0 = Math.min(W, H) * 0.078 * (1 + low * 0.25 * react);
+    drawSun(scx, scy, r0, sun, sky);
+
+    /* water body — flat base tinted between far/near and pulled toward sky
+       at dusk/night so the horizon never hard-edges */
+    const farW  = mix(mix(WATER_FAR, sky, 0.35 + night * 0.3), sky, night * 0.35);
+    const nearW = mix(WATER_NEAR, sky, night * 0.45);
+    ctx.fillStyle = css(nearW);
+    ctx.fillRect(0, horizon, W, H - horizon);
+
+    /* sun glitter — a shimmering column on the water beneath the sun.
+       short horizontal strokes, flickering by noise, widening toward the
+       viewer and fading with depth. this is the biome's signature. */
+    const glint = mix(sun, [255, 252, 245], 0.25);
+    const rows = 46;
+    for (let i = 0; i < rows; i++) {
+      const u = i / (rows - 1);                     // 0 at horizon → 1 bottom
+      const y = horizon + u * (H - horizon);
+      const spread = (0.02 + u * 0.16) * W;         // column widens with depth
+      const amp = (0.5 + fbm(3, t * 0.8 + i * 0.6, 3)) * 0.5;
+      const alpha = (1 - u) * 0.5 * (0.4 + 0.6 * amp) * (1 - night * 0.4);
+      if (alpha < 0.02) continue;
+      const dashes = 2 + (i % 3);
+      ctx.strokeStyle = css(glint, alpha);
+      ctx.lineWidth = 1 + u * 1.6;
+      for (let d = 0; d < dashes; d++) {
+        const jx = (fbm(5 + d * 7, t * 1.2 + i * 1.3, 2) - 0.5) * spread * 1.4;
+        const w = spread * (0.18 + 0.5 * ih(i * 5 + d, 9));
+        const cx = scx + jx;
+        ctx.beginPath();
+        ctx.moveTo(cx - w / 2, y);
+        ctx.lineTo(cx + w / 2, y);
+        ctx.stroke();
+      }
+    }
+
+    /* wave banding — a handful of horizontal fbm strokes for surface texture,
+       calmer at the horizon, larger and further apart toward the foreground */
+    const lines = 22;
+    for (let i = 0; i < lines; i++) {
+      const u = i / (lines - 1);
+      const y = horizon + Math.pow(u, 1.5) * (H - horizon);
+      const band = mix(farW, nearW, u);
+      const ink = mix(band, [0, 0, 0], 0.06 + u * 0.05);
+      ctx.strokeStyle = css(ink, 0.35 + u * 0.25);
+      ctx.lineWidth = 0.8 + u * 1.4;
+      const amp = (2 + u * u * 22) * (1 + mid_react(low, react) * 0.4);
+      const wob = 0.006 + u * 0.01;
+      ctx.beginPath();
+      for (let x = -4; x <= W + 6; x += 7) {
+        const n = fbm(40 + i * 13, x * wob + t * (0.05 + u * 0.12), 3);
+        const yy = y + (n - 0.5) * amp
+                 + Math.sin(x * 0.01 + t * 0.4 + i) * amp * 0.25;
+        x === -4 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+  },
+});
+/* small helper so wave amplitude nods to the same stand-in band */
+function mid_react(low, react) { return low * react; }
+
+/* -------------------------------------------------------------- forest --
+   layered canopies receding into haze — same depth trick as the hills, but
+   the top edge is a rolling hill plus a peaky conifer-tip term, and a few
+   near trunks stand in the foreground to frame the depth. */
+const CANOPY_FAR  = [196, 200, 180];   // pale sage at the back, near the sky
+const CANOPY_NEAR = [ 54,  64,  50];   // deep pine up close
+ENVIRONMENTS.push({
+  name: 'forest',
+  draw({ t, sun, sky, night, low, mid, react }) {
+    ctx.fillStyle = css(sky);
+    ctx.fillRect(0, 0, W, H);
+
+    /* sun rides high and small — light through a gap in the trees */
+    const scx = W * 0.72, scy = H * 0.19;
+    const r0 = Math.min(W, H) * 0.058 * (1 + low * 0.2 * react);
+    drawSun(scx, scy, r0, sun, sky);
+
+    const LAYERS = 6;
+    for (let i = 0; i < LAYERS; i++) {
+      const u = i / (LAYERS - 1);                 // 0 far → 1 near
+      const baseY = H * (0.30 + u * 0.42);        // canopy tops descend forward
+      const sway = t * (0.02 + u * 0.05);
+      const canopy = H * (0.05 + u * 0.05);       // rolling height variation
+      const tips = H * (0.035 + u * 0.075) * (1 + mid * 0.5 * react);
+      const col = mix(CANOPY_FAR, CANOPY_NEAR, u);
+      const tinted = mix(col, sky, night * (0.5 - u * 0.05));
+
+      /* a haze band at each canopy base fades the layer behind it */
+      if (i > 0) {
+        const g = ctx.createLinearGradient(0, baseY - canopy * 2.4, 0, baseY + canopy);
+        g.addColorStop(0, css(sky, 0));
+        g.addColorStop(1, css(sky, 0.5 * (1 - u) + 0.12));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, baseY - canopy * 2.4, W, canopy * 3.4);
+      }
+
+      ctx.fillStyle = css(tinted);
+      ctx.beginPath();
+      ctx.moveTo(-4, H + 4);
+      for (let x = -4; x <= W + 6; x += 5) {
+        const roll = fbm(i * 71 + 3, x * 0.0016 * (0.6 + u) + sway, 4) - 0.5;
+        const tip = Math.pow(vn(i * 23 + 11, x * 0.055 * (0.5 + u) + sway * 2), 3);
+        const edge = baseY - roll * 2 * canopy - tip * tips;
+        ctx.lineTo(x, edge);
+      }
+      ctx.lineTo(W + 4, H + 4);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    /* foreground trunks — thin, near-black, softly wobbled so they read as
+       standing timber rather than ruled lines; they frame the receding haze.
+       each tree's foliage is seeded off its index k (via the ih hash drift
+       already uses for visuals), so species/size/fullness vary yet stay
+       deterministic — same forest every time, different tree to tree. */
+    const TRUNK = mix(CANOPY_NEAR, [20, 22, 18], 0.6);
+    const trunkCol = mix(TRUNK, sky, night * 0.35);
+    const n = 7;
+    for (let k = 0; k < n; k++) {
+      const tx = W * ((k + 0.5) / n + (ih(k, 3) - 0.5) * 0.08);
+      const w = W * 0.004 * (0.6 + ih(k, 4) * 1.1);
+      const topY = H * (0.14 + ih(k, 5) * 0.34);
+      const lean = (ih(k, 6) - 0.5) * W * 0.02;
+      const alpha = 0.5 + ih(k, 8) * 0.4;
+      ctx.fillStyle = css(trunkCol, alpha);
+      ctx.beginPath();
+      for (let side = 0; side < 2; side++) {
+        const dir = side === 0 ? 1 : -1;
+        const y0 = side === 0 ? topY : H + 6;
+        const y1 = side === 0 ? H + 6 : topY;
+        for (let y = y0; dir > 0 ? y <= y1 : y >= y1; y += dir * 8) {
+          const v = (y - topY) / (H - topY);
+          const wob = (fbm(k * 17 + 5, y * 0.01, 3) - 0.5) * w * 3;
+          const half = w * (0.4 + v * 0.9);           // taper: thin at top
+          const cx = tx + lean * (1 - v) + wob;
+          const px = cx + dir * half;
+          (side === 0 && y === y0) ? ctx.moveTo(px, y) : ctx.lineTo(px, y);
+        }
+      }
+      ctx.closePath();
+      ctx.fill();
+      drawFoliage(k, tx, topY, lean, sky, night, mid, react, t);
+    }
+  },
+});
+
+/* per-tree foliage, seeded off the trunk index. ih(k, …) gives each tree a
+   stable species / size / fullness / green, so the stand varies but is fully
+   deterministic. ~1 in 6 stays a bare snag for silhouette variety. */
+function drawFoliage(k, tx, topY, lean, sky, night, mid, react, t) {
+  const species = ih(k, 20);
+  if (species < 0.16) return;                       // bare standing snag
+
+  /* deterministic green, varied per tree from deep pine to olive, then
+     pulled toward the sky as night falls (matches the canopy layers) */
+  const base = mix([44, 56, 40], [92, 98, 60], ih(k, 29));
+  const col = mix(base, sky, night * 0.45);
+  const shade = mix(base, [16, 20, 14], 0.5);        // shadowed underside
+  const shadeCol = mix(shade, sky, night * 0.45);
+
+  const trunkLen = H - topY;
+  const fbw = W * (0.02 + ih(k, 23) * 0.028);         // base half-width
+  const sway = Math.sin(t * 0.5 + k * 1.7) * (2 + mid * react * 7);
+  const cxAt = y => {                                // hug the (leaning) trunk
+    const vT = (y - topY) / (H - topY);
+    return tx + lean * (1 - vT) + sway * (1 - vT);
+  };
+
+  if (species < 0.78) {
+    /* fir — a scalloped evergreen silhouette, boughs stepping wider toward
+       the base, edges fbm-wobbled so it reads hand-drawn not geometric.
+       foliage runs most of the trunk (short bare base showing) so it reads
+       as a whole tree, not a tuft on a pole */
+    const fh = trunkLen * (0.55 + ih(k, 22) * 0.28);
+    const tiers = 3 + Math.floor(ih(k, 24) * 4);
+    const halfAt = v => {
+      const scallop = 0.68 + 0.32 * Math.abs(Math.sin(v * tiers * Math.PI));
+      const wob = (fbm(k * 13 + 30, v * 6 + t * 0.08, 3) - 0.5) * fbw * 0.3;
+      return fbw * Math.pow(v, 0.82) * scallop + wob;
+    };
+    ctx.fillStyle = css(col, 0.94);
+    ctx.beginPath();
+    for (let v = 0; v <= 1.0001; v += 0.05) {        // down the right edge
+      const y = topY + v * fh, cx = cxAt(y);
+      v === 0 ? ctx.moveTo(cx, y) : ctx.lineTo(cx + halfAt(v), y);
+    }
+    for (let v = 1; v >= 0; v -= 0.05) {             // back up the left
+      const y = topY + v * fh;
+      ctx.lineTo(cxAt(y) - halfAt(v), y);
+    }
+    ctx.closePath();
+    ctx.fill();
+    /* a soft shadow gusset down the left of each bough for a little depth */
+    ctx.fillStyle = css(shadeCol, 0.22);
+    ctx.beginPath();
+    for (let v = 0; v <= 1.0001; v += 0.05) {
+      const y = topY + v * fh, cx = cxAt(y);
+      v === 0 ? ctx.moveTo(cx, y) : ctx.lineTo(cx - halfAt(v) * 0.55, y);
+    }
+    for (let v = 1; v >= 0; v -= 0.05) {
+      const y = topY + v * fh;
+      ctx.lineTo(cxAt(y) - halfAt(v), y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    /* broadleaf — a rounded crown of overlapping fbm-wobbled blobs (same
+       organic rim as the sun/clouds) riding atop a visible trunk, a
+       mixed-forest accent among the firs */
+    const crown = trunkLen * (0.28 + ih(k, 22) * 0.22);
+    const cr = fbw * 2.1;                              // crown radius
+    const nb = 5 + Math.floor(ih(k, 25) * 4);
+    for (let b = 0; b < nb; b++) {
+      const bx = cxAt(topY + crown * 0.4) + (ih(k * 7 + b, 26) - 0.5) * cr * 1.4;
+      const by = topY + crown * (0.15 + ih(k * 7 + b, 27) * 0.7);
+      const br = cr * (0.4 + ih(k * 7 + b, 28) * 0.5);
+      ctx.fillStyle = css(b % 2 ? shadeCol : col, 0.9);
+      ctx.beginPath();
+      for (let i = 0; i <= 40; i++) {
+        const a = (i / 40) * Math.PI * 2;
+        const rr = br * (1 + 0.28 * (fbm(k * 9 + b * 5, a * 1.6 + t * 0.05, 3) - 0.5) * 2);
+        const px = bx + Math.cos(a) * rr, py = by + Math.sin(a) * rr;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+}
+
+/* ------------------------------------------------------- hills (ported) --
+   drift's own ridgeline scene, brought over so switching demonstrates the
+   framework and the shared style. */
+const RIDGE_FAR = [221, 212, 194], RIDGE_NEAR = [116, 106, 91];
+ENVIRONMENTS.push({
+  name: 'hills',
+  draw({ t, sun, sky, night, low, mid, react }) {
+    ctx.fillStyle = css(sky);
+    ctx.fillRect(0, 0, W, H);
+    const dayness = 1 - night;
+    const scx = W * 0.7, scy = H * (0.18 + 0.13 * (1 - dayness));
+    const r0 = Math.min(W, H) * 0.085 * (1 + low * 0.25 * react);
+    drawSun(scx, scy, r0, sun, sky);
+    for (let i = 0; i < 5; i++) {
+      const baseY = H * (0.5 + i * 0.108);
+      const rc = i >= 3 ? low : mid;
+      const amp = H * (0.05 + i * 0.014) * (1 + rc * 0.9 * react);
+      const col = mix(RIDGE_FAR, RIDGE_NEAR, i / 4);
+      const tinted = mix(col, sky, night * (0.55 - i * 0.06));
+      ctx.fillStyle = css(tinted);
+      ctx.beginPath();
+      ctx.moveTo(-4, H + 4);
+      for (let x = -4; x <= W + 6; x += 6) {
+        const n = fbm(i * 57 + 9,
+          x * 0.004 * (0.7 + i * 0.35) + t * (0.005 + i * 0.004), 4);
+        ctx.lineTo(x, baseY + (n - 0.5) * 2 * amp);
+      }
+      ctx.lineTo(W + 4, H + 4); ctx.closePath(); ctx.fill();
+    }
+  },
+});
+
+/* =========================================================================
+   controls + loop
+   ========================================================================= */
+let current = 0;
+const hourInput = document.getElementById('hour');
+const hourVal   = document.getElementById('hourval');
+const liveInput = document.getElementById('live');
+const reactInput= document.getElementById('react');
+
+const envBar = document.getElementById('envs');
+ENVIRONMENTS.forEach((e, i) => {
+  const b = document.createElement('button');
+  b.textContent = e.name;
+  b.onclick = () => { current = i; syncEnvs(); };
+  envBar.appendChild(b);
+});
+function syncEnvs() {
+  [...envBar.children].forEach((b, i) => b.classList.toggle('on', i === current));
+}
+syncEnvs();
+
+const fmtHour = h => {
+  const hh = String(Math.floor(h) % 24).padStart(2, '0');
+  const mm = String(Math.floor((h % 1) * 60)).padStart(2, '0');
+  return `${hh}:${mm}`;
+};
+
+function frame() {
+  requestAnimationFrame(frame);
+  const t = performance.now() / 1000;
+
+  let hod;
+  if (liveInput.checked) {
+    const d = new Date();
+    hod = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+    hourInput.value = hod;
+  } else {
+    hod = parseFloat(hourInput.value);
+  }
+  hourVal.textContent = fmtHour(hod);
+
+  const { sky, sun } = skyAt(hod);
+  const night = nightAmt(sky);
+  const react = parseFloat(reactInput.value);
+  const low = breath(t, 1), mid = breath(t + 40, 2);
+
+  ENVIRONMENTS[current].draw({ t, hod, sky, sun, night, low, mid, react });
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

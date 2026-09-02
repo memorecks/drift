@@ -42,6 +42,53 @@ function genAfter(g) {
   const segs = hourSegs(e);
   return i + 1 < segs.length ? segs[i + 1] : hourSegs(e + 1)[0];
 }
+/* the generation sounding just before g (previous segment, wrapping the hour
+   seam); null at the broadcast's very first generation */
+function genPrev(g) {
+  const e = Math.floor(g / GEN_SLOTS), i = g % GEN_SLOTS;
+  if (i > 0) return g - 1;
+  if (e <= 0) return null;
+  const s = hourSegs(e - 1);
+  return s[s.length - 1].g;
+}
+
+/* biome: which visual environment a generation inhabits — a deterministic,
+   per-generation choice that never repeats the previous movement's biome, so
+   the scenery changes every time the music does and every listener sees the
+   same one. Anchored per UTC day (the day's first generation picks freely,
+   like the day's shared tonal centre), then each later generation takes a
+   seeded non-zero step off its predecessor's biome. Bounded (the walk never
+   crosses a day), reproducible, and — crucially — drawn from its own
+   R('biome', g) stream so none of the music seeds shift. Visual-only. */
+const BIOME_IDS = ['hills', 'ocean', 'forest', 'coast', 'snow', 'sky'];
+const biomeCache = new Map();
+function genBiomeIndex(g) {
+  if (biomeCache.has(g)) return biomeCache.get(g);
+  const N = BIOME_IDS.length;
+  const dayOf = x => Math.floor(genSeg(x).start / (24 * HOUR));
+  const d = dayOf(g);
+  const stack = [];
+  let cur = g, idx = -1;
+  for (;;) {
+    if (biomeCache.has(cur)) { idx = biomeCache.get(cur); break; }
+    stack.push(cur);
+    const pg = genPrev(cur);
+    if (pg === null || pg === cur || dayOf(pg) !== d) break;  // day's first gen
+    cur = pg;
+  }
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const gg = stack[i], r = R('biome', gg);
+    idx = idx < 0
+      ? Math.floor(r() * N)                             // day's first: free pick
+      : (idx + 1 + Math.floor(r() * (N - 1))) % N;      // step off the previous
+    biomeCache.set(gg, idx);
+  }
+  if (biomeCache.size > 400)
+    for (let n = biomeCache.size - 400; n > 0; n--)
+      biomeCache.delete(biomeCache.keys().next().value);
+  return biomeCache.get(g);
+}
+const genBiome = g => BIOME_IDS[genBiomeIndex(g)];
 
 /* one generation of broadcast = one "movement": mode, meter, tempo, textures */
 const genCache = new Map();
@@ -193,7 +240,7 @@ function genParams(g) {
   const P = { g, start, len, day, hod, rootPc, modeName, mode, meter, pulse,
               droneFifth: rand('dr5', g) < 0.5,
               chordSpan, melK, bassK, bassRot, melBase, bright, loops,
-              wind, water, rain, birds, crickets,
+              wind, water, rain, birds, crickets, biome: genBiome(g),
               pluckVoice, melPluck, arpAmt, arpK, arpRot, toneHz,
               ostLen, ostPat, ostStep, ostLevel, ostVoice,
               melShift, enters, outroDur, timbre,

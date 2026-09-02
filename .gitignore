@@ -1,1 +1,7 @@
 .DS_Store
+
+# dev tooling deps (not part of the broadcast)
+tools/node_modules/
+tools/renders/
+
+tools/clips/

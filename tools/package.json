@@ -1,0 +1,13 @@
+{
+  "name": "drift-tools",
+  "private": true,
+  "type": "module",
+  "description": "Dev-only utilities for drift (not part of the broadcast).",
+  "bin": { "drift-render": "render.mjs" },
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.9.0"
+  }
+}
